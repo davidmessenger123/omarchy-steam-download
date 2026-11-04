@@ -646,6 +646,10 @@ def heroic_rows(include_queued):
         params = item.get("params") if isinstance(item.get("params"), dict) else item
         game = params.get("gameInfo") if isinstance(params.get("gameInfo"), dict) else {}
         app_name = first(params, "appName", "app_name", "id")
+        if str(app_name).lower() == "gog-redist":
+            # Heroic installs this small Galaxy dependency alongside GOG games;
+            # it is not a user-facing game download.
+            continue
         runner = first(params, "runner", default="legendary")
         title = first(game, "title", "name")
         if not title and isinstance(app_name, str):
