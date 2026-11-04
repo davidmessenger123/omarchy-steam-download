@@ -292,6 +292,9 @@ class QmlContract(unittest.TestCase):
         self.assertIn("Process {", service)
         self.assertIn("steam-downloads.py", service)
         self.assertIn("bar.shell.serviceFor(root.moduleName)", widget)
+        self.assertIn("IpcHandler", service)
+        self.assertNotIn("IpcHandler", widget)
+        self.assertIn("registerWidget", widget)
         self.assertNotIn("Process {", widget)
         self.assertNotIn("pollTimer", widget)
 

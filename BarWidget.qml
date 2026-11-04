@@ -73,21 +73,14 @@ BarWidget {
   }
 
   onSettingsChanged: root.applySettings()
-  Component.onCompleted: root.applySettings()
-
-  // ---- IPC ----------------------------------------------------------------
-
-  IpcHandler {
-    target: root.moduleName
-    function refresh(): void { root.refresh() }
-    function open(): void { root.open() }
-    function close(): void { root.close() }
-    function show(): void { root.open() }
-    function hide(): void { root.close() }
-    function toggle(): void { root.togglePanel() }
+  Component.onCompleted: {
+    root.applySettings()
+    if (root.svc) root.svc.registerWidget(root)
   }
+  Component.onDestruction: if (root.svc && typeof root.svc.unregisterWidget === "function") root.svc.unregisterWidget(root)
 
   property bool opened: false
+  onOpenedChanged: if (root.svc) root.svc.noteOpened(root, root.opened)
   function open() { root.opened = true }
   function close() { root.opened = false }
   function togglePanel() { root.opened = !root.opened }
