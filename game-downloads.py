@@ -774,6 +774,12 @@ def _epic_app_identity(value):
     """Return (app_name, item_id, namespace_id) from the journal's AppId."""
     if isinstance(value, str):
         return value, "", ""
+    if isinstance(value, (list, tuple)):
+        # AppId is declared as namespaceId, itemId, appName.  A tuple
+        # serialisation therefore puts the useful name last.
+        fields = [field if isinstance(field, str) else "" for field in value[:3]]
+        fields += [""] * (3 - len(fields))
+        return fields[2], fields[1], fields[0]
     if not isinstance(value, dict):
         return "", "", ""
     app_name = first(value, "appName", "app_name", "appId", "app_id")
