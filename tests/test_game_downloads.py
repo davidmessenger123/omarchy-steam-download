@@ -592,6 +592,7 @@ class QmlContract(unittest.TestCase):
         self.assertIn("IpcHandler", service)
         self.assertNotIn("IpcHandler", widget)
         self.assertIn("registerWidget", widget)
+        self.assertIn("onSvcChanged", widget)
         self.assertNotIn("Process {", widget)
         self.assertNotIn("pollTimer", widget)
         self.assertIn("game-downloads", service)
