@@ -837,6 +837,20 @@ def _epic_chunk_bytes(install_path, deadline):
     return 0
 
 
+def _enum_text(value):
+    """Accept both a plain Rust enum string and an externally tagged object."""
+    if isinstance(value, dict):
+        for key in ("state", "status", "kind", "type", "value", "name"):
+            child = value.get(key)
+            if isinstance(child, str) and child:
+                return child
+        for key in value:
+            if isinstance(key, str) and key:
+                return key
+        return ""
+    return str(value or "")
+
+
 def _epic_state_kind(state):
     value = re.sub(r"[^a-z]", "", str(state or "").lower())
     if not value:
@@ -918,10 +932,7 @@ def epic_rows(include_queued, deadline):
     for index, operation in enumerate(operations):
         if not isinstance(operation, dict):
             continue
-        kind_value = first(operation, "kind", "type", default="install")
-        if isinstance(kind_value, dict):
-            kind_value = first(kind_value, "kind", "type", "action", default="")
-        kind = str(kind_value).lower()
+        kind = _enum_text(first(operation, "kind", "type", default="install")).lower()
         if kind in ("uninstall", "remove", "delete"):
             continue
 
@@ -936,9 +947,7 @@ def epic_rows(include_queued, deadline):
         if not install_path:
             install_path = default_dir
 
-        state = first(operation, "state", "status")
-        if isinstance(state, dict):
-            state = first(state, "state", "status", "kind", default="")
+        state = _enum_text(first(operation, "state", "status"))
         state_kind = _epic_state_kind(state)
         if state_kind == "terminal":
             continue
