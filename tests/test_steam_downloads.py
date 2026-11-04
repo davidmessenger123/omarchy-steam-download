@@ -14,6 +14,7 @@ import sys
 import tempfile
 import time
 import unittest
+from pathlib import Path
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HELPER = os.path.join(ROOT, "steam-downloads.py")
@@ -282,6 +283,17 @@ class EndToEnd(unittest.TestCase):
             self.assertTrue(games[0]["queued"])
             self.assertEqual(games[0]["downloaded"], 0)
 
+
+class QmlContract(unittest.TestCase):
+    def test_service_owns_the_poller(self):
+        root = Path(__file__).resolve().parents[1]
+        service = (root / "Service.qml").read_text(encoding="utf-8")
+        widget = (root / "BarWidget.qml").read_text(encoding="utf-8")
+        self.assertIn("Process {", service)
+        self.assertIn("steam-downloads.py", service)
+        self.assertIn("bar.shell.serviceFor(root.moduleName)", widget)
+        self.assertNotIn("Process {", widget)
+        self.assertNotIn("pollTimer", widget)
 
 if __name__ == "__main__":
     unittest.main()
