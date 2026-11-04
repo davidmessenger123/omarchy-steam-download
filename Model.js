@@ -312,12 +312,12 @@ function derive(rows, meta, previous, nowSeconds) {
 
   var state, status
   if (active.length === 0) {
-    if (installedCount === 0) {
-      state = "stopped"
-      status = "No supported game launchers found"
-    } else if (!running && note !== "") {
+    if (!running && note !== "") {
       state = "stopped"
       status = note
+    } else if (installedCount === 0) {
+      state = "stopped"
+      status = "No supported game launchers found"
     } else {
       state = "idle"
       status = "No active game downloads"

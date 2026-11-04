@@ -254,6 +254,15 @@ test("stopped when no launchers are running", () => {
   assert.strictEqual(state.status, "No game launchers running");
 });
 
+test("a helper timeout keeps its explanatory note", () => {
+  const parsed = M.parse(JSON.stringify({
+    __meta: { running: false, downloads: 0, note: "Timed out reading game downloads" }
+  }));
+  const state = M.derive(parsed.rows, parsed.meta, {}, 1000);
+  assert.strictEqual(state.state, "stopped");
+  assert.strictEqual(state.status, "Timed out reading game downloads");
+});
+
 test("downloading with a percentage pill", () => {
   const parsed = M.parse(row(1, "Game", 50, 100) + "\n" + meta);
   const state = M.derive(parsed.rows, parsed.meta, {}, 1000);
