@@ -32,20 +32,19 @@ BarWidget {
 
   // ---- state --------------------------------------------------------------
 
-  property var rows: []            // every download, from the last poll
-  property var active: []          // ...minus the queued ones
-  property var primary: null       // the download the pill reports
-  property string state: "idle"    // downloading | idle | stopped
-  property string status: "No active Steam downloads"
-  property bool running: true
-  property string note: ""
-  property string updatedLabel: ""
-  property bool fetchBusy: false
+  // The shared service owns the poller and the previous sample, so a docked
+  // laptop does not run one Steam scan per monitor.
+  readonly property var svc: bar && bar.shell ? bar.shell.serviceFor(root.moduleName) : null
 
-  // Previous poll's rows keyed by appid, each carrying the timestamp it was
-  // taken at. The rate is the growth of the staging tree between two polls,
-  // so this is what makes the speed and ETA meaningful.
-  property var previous: ({})
+  readonly property var rows: root.svc && root.svc.rows ? root.svc.rows : []
+  readonly property var active: root.svc && root.svc.active ? root.svc.active : []
+  readonly property var primary: root.svc ? root.svc.primary : null
+  readonly property string state: root.svc ? root.svc.state : "idle"
+  readonly property string status: root.svc ? root.svc.status : "No active Steam downloads"
+  readonly property bool running: root.svc ? root.svc.running : true
+  readonly property string note: root.svc ? root.svc.note : ""
+  readonly property string updatedLabel: root.svc ? root.svc.updatedLabel : ""
+  readonly property bool fetchBusy: root.svc ? root.svc.fetchBusy : false
 
   readonly property bool downloading: state === "downloading"
   readonly property var popupRows: Model.buildRows(root.rows)
@@ -66,98 +65,15 @@ BarWidget {
   // ---- polling ------------------------------------------------------------
 
   function refresh() {
-    if (root.fetchBusy) return
-
-    // Re-read settings fresh: shell.json can be edited at any time and the
-    // host only updates this widget's `settings` in place.
-    var showQueued = setting("showQueued", true) !== false
-
-    // -E pins the interpreter to a known start state, and the helper has a
-    // SIGALRM deadline of its own so a slow filesystem cannot hang the bar.
-    fetcher.clearEnvironment = true
-    fetcher.command = ["/usr/bin/python3", "-E",
-      Model.scriptPath(Qt.resolvedUrl("steam-downloads.py"))]
-    if (showQueued) fetcher.command.push("--include-queued")
-
-    root.fetchBusy = true
-    fetcher.running = true
-    watchdog.start()
+    if (root.svc) root.svc.refresh()
   }
 
-  function ingest(raw) {
-    watchdog.stop()
-    root.fetchBusy = false
-
-    var parsed = Model.parse(raw)
-    // Now, not the helper's clock: the rate is a delta between two polls
-    // taken by this same process, so both ends share one timeline.
-    var state = Model.derive(parsed.rows, parsed.meta, root.previous, Date.now() / 1000)
-
-    // Carry the rate forward for one poll. A download that pauses between
-    // two measurements would otherwise read as 0 B/s and the bar would
-    // flicker to the paused glyph on every hiccup.
-    for (var i = 0; i < state.rows.length; i++) {
-      var row = state.rows[i]
-      if (row.rate > 0) continue
-      var prior = root.previous[row.appid]
-      if (prior && root.downloading && prior.rate > 0) row.rate = prior.rate
-    }
-
-    root.rows = state.rows
-    root.active = state.active
-    root.primary = state.primary
-    root.state = state.state
-    root.status = state.status
-    root.running = state.running
-    root.note = state.note
-    root.previous = Model.indexByAppid(state.rows)
-    root.updatedLabel = "Updated " + Model.clockTime(new Date())
+  function applySettings() {
+    if (root.svc) root.svc.configure(setting("interval", 3), setting("showQueued", true) !== false)
   }
 
-  onSettingsChanged: function() {
-    pollTimer.interval = Model.clampInt(setting("interval", 3), 1, 60) * 1000
-    Qt.callLater(root.refresh)
-  }
-
-  Process {
-    id: fetcher
-    command: []
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: root.ingest(text)
-    }
-    onExited: function(exitCode) {
-      // If the stream already parsed rows this is a no-op. A failure with no
-      // usable stdout is the only thing that should move the widget off its
-      // last known state, and even then it keeps whatever it last saw.
-      if (root.fetchBusy) root.ingest("")
-    }
-  }
-
-  // Independent watchdog: the shell is the final authority on how long a
-  // poll may run. The helper bounds its own walk, but a stalled mount can
-  // still outlive that.
-  Timer {
-    id: watchdog
-    interval: 15000
-    repeat: false
-    onTriggered: {
-      if (!root.fetchBusy) return
-      root.fetchBusy = false
-      fetcher.running = false
-      root.state = root.downloading ? root.state : "idle"
-      root.status = root.downloading ? root.status : "Steam check timed out"
-    }
-  }
-
-  Timer {
-    id: pollTimer
-    interval: Model.clampInt(setting("interval", 3), 1, 60) * 1000
-    running: true
-    repeat: true
-    triggeredOnStart: true
-    onTriggered: root.refresh()
-  }
+  onSettingsChanged: root.applySettings()
+  Component.onCompleted: root.applySettings()
 
   // ---- IPC ----------------------------------------------------------------
 
