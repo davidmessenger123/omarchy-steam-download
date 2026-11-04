@@ -1,4 +1,4 @@
-// Unit tests for the Steam Download bar widget's pure helpers.
+// Unit tests for the Game Downloads bar widget's pure helpers.
 //
 // Run with: node tests/test_model.js
 
@@ -62,6 +62,18 @@ test("seconds, minutes, hours and days", () => {
   assert.strictEqual(M.formatEta(0), "");
 });
 
+group("source labels");
+
+test("human labels and glyphs", () => {
+  assert.strictEqual(M.sourceLabel("steam"), "Steam");
+  assert.strictEqual(M.sourceLabel("heroic"), "Heroic");
+  assert.strictEqual(M.sourceLabel("epic"), "Epic Games");
+  assert.strictEqual(M.runnerLabel("legendary"), "Epic");
+  assert.strictEqual(M.runnerLabel("gog"), "GOG");
+  assert.strictEqual(M.sourceGlyph("steam"), M.GLYPH_STEAM);
+  assert.strictEqual(M.sourceGlyph("heroic"), M.GLYPH_GAME);
+});
+
 group("two-phase accounting");
 
 // Steam runs a compressed download and an uncompressed staging phase at once.
@@ -76,16 +88,11 @@ test("total is never the sum of both phases", () => {
 });
 
 test("a stale staged field cannot inflate progress", () => {
-  // BytesStaged in the manifest is frozen at download start; adding it to
-  // the live tree double-counts and would report a half-done download as
-  // three-quarters done.
   const row = { downloaded: 500, total: 1000, staged: 250 };
   assert.strictEqual(M.doneBytes(row), M.toNumber(row.downloaded));
 });
 
 test("real world figures reproduce Steam's percentage", () => {
-  // Observed live: a 73.1 GB staging total with 70.4 GB on disk, which
-  // Steam reported as 94% at a nearby moment.
   const row = { downloaded: 70400000000, total: 73089514868 };
   assert.strictEqual(M.percent(row), 96);
 });
@@ -118,7 +125,6 @@ test("growth over the poll window", () => {
 });
 
 test("a shrinking tree yields no rate", () => {
-  // Steam commits and deletes as it goes, so the staging tree can shrink.
   assert.strictEqual(M.rateFor({ downloaded: 50 }, { downloaded: 100, at: 998 }, 1000), 0);
 });
 
@@ -150,10 +156,13 @@ test("clampInt bounds and fallback", () => {
   assert.strictEqual(M.clampInt("nonsense", 3, 60), 3);
 });
 
-test("indexByAppid keys by appid", () => {
-  const index = M.indexByAppid([{ appid: 1 }, { appid: 2 }]);
-  assert.strictEqual(index[1].appid, 1);
-  assert.strictEqual(index[2].appid, 2);
+test("indexByKey uses stable source/app keys", () => {
+  const index = M.indexByKey([
+    { source: "steam", appid: 1 },
+    { key: "heroic:legendary:abc", source: "heroic", appid: "abc" }
+  ]);
+  assert.strictEqual(index["steam:1"].appid, 1);
+  assert.strictEqual(index["heroic:legendary:abc"].appid, "abc");
 });
 
 test("scriptPath strips the file:// prefix", () => {
@@ -165,13 +174,32 @@ group("helper stdout parsing");
 
 function row(appid, name, downloaded, total, extra) {
   return JSON.stringify(Object.assign({
+    key: "steam:" + appid,
+    source: "steam", sourceName: "Steam",
     appid: appid, name: name, downloaded: downloaded, total: total,
     library: "/steam", idle: 0
   }, extra || {}));
 }
 
+function heroicRow(appid, name, downloaded, total, extra) {
+  return JSON.stringify(Object.assign({
+    key: "heroic:legendary:" + appid,
+    source: "heroic", sourceName: "Heroic",
+    runner: "legendary", runnerName: "Epic",
+    appid: appid, name: name, downloaded: downloaded, total: total,
+    library: "/heroic"
+  }, extra || {}));
+}
+
 const meta = JSON.stringify({
-  __meta: { running: true, steamRoot: "/steam", downloads: 1, libraries: 2, note: "" }
+  __meta: {
+    running: true, downloads: 1, libraries: 2, note: "",
+    sources: {
+      steam: { installed: true, running: true, active: 1 },
+      heroic: { installed: true, running: false, active: 0 },
+      epic: { installed: false, running: false, active: 0 }
+    }
+  }
 });
 
 test("parses rows and meta", () => {
@@ -179,6 +207,7 @@ test("parses rows and meta", () => {
   assert.strictEqual(parsed.rows.length, 1);
   assert.strictEqual(parsed.rows[0].name, "Star Wars Outlaws");
   assert.strictEqual(parsed.meta.running, true);
+  assert.strictEqual(parsed.meta.sources.steam.installed, true);
 });
 
 test("tolerates blank and malformed lines", () => {
@@ -193,6 +222,17 @@ test("empty input", () => {
   assert.deepStrictEqual(parsed.meta, {});
 });
 
+test("parses explicit Heroic percentage and runner", () => {
+  const parsed = M.parse(heroicRow("abc", "Heroic Game", 100, 200, {
+    percent: 42.5, rate: 1000000, eta: 300
+  }) + "\n" + meta);
+  const state = M.derive(parsed.rows, parsed.meta, {}, 1000);
+  assert.strictEqual(state.primary.sourceName, "Heroic");
+  assert.strictEqual(state.primary.runnerName, "Epic");
+  assert.strictEqual(state.primary.percent, 42);
+  assert.strictEqual(state.primary.fraction, 0.425);
+});
+
 group("widget state");
 
 test("idle when nothing is downloading", () => {
@@ -202,13 +242,16 @@ test("idle when nothing is downloading", () => {
   assert.strictEqual(M.pillText(state.primary), "");
 });
 
-test("stopped when Steam is not running", () => {
+test("stopped when no launchers are running", () => {
   const parsed = M.parse(JSON.stringify({
-    __meta: { running: false, downloads: 0, note: "Steam is not running" }
+    __meta: {
+      running: false, downloads: 0, note: "No game launchers running",
+      sources: { steam: { installed: true, running: false, active: 0 } }
+    }
   }));
   const state = M.derive(parsed.rows, parsed.meta, {}, 1000);
   assert.strictEqual(state.state, "stopped");
-  assert.strictEqual(state.status, "Steam is not running");
+  assert.strictEqual(state.status, "No game launchers running");
 });
 
 test("downloading with a percentage pill", () => {
@@ -240,19 +283,33 @@ test("queued downloads are listed but never active", () => {
   assert.strictEqual(M.pillText(state.primary), "");
 });
 
-test("popup subtitle reports bytes, rate and eta", () => {
+test("indeterminate download shows the icon without a number", () => {
+  const parsed = M.parse(JSON.stringify({
+    key: "epic:abc", source: "epic", sourceName: "Epic Games",
+    appid: "abc", name: "Epic Game", downloaded: 0, total: 0,
+    queued: false, status: "installing", indeterminate: true
+  }) + "\n" + meta);
+  const state = M.derive(parsed.rows, parsed.meta, {}, 1000);
+  assert.strictEqual(state.primary.indeterminate, true);
+  assert.strictEqual(M.pillText(state.primary), "");
+  assert.strictEqual(state.status, "Epic Game · Installing…");
+  const rowData = M.buildRows(state.active)[0];
+  assert.ok(/Epic Games · Installing/.test(rowData.subtitle), rowData.subtitle);
+});
+
+test("popup subtitle reports source, bytes, rate and eta", () => {
   // Two polls four seconds apart with 100 MB of growth: a 25 MB/s rate, which
   // is what makes the download glyph, the throughput and the eta appear.
   const before = M.parse(row(1, "Game", 20000000000, 137200339924) + "\n" + meta);
   const first = M.derive(before.rows, before.meta, {}, 1000);
   const after = M.parse(row(1, "Game", 20100000000, 137200339924) + "\n" + meta);
-  const second = M.derive(after.rows, after.meta, M.indexByAppid(first.rows), 1004);
+  const second = M.derive(after.rows, after.meta, M.indexByKey(first.rows), 1004);
 
   assert.strictEqual(second.primary.rate, 25000000);
   const rowData = M.buildRows(second.active)[0];
   assert.strictEqual(rowData.percent, 14);
   assert.strictEqual(rowData.glyph, M.GLYPH_DOWNLOAD);
-  assert.ok(/^20 GB of 137 GB/.test(rowData.subtitle), rowData.subtitle);
+  assert.ok(/^Steam · 20 GB of 137 GB/.test(rowData.subtitle), rowData.subtitle);
   assert.ok(/Mbps/.test(rowData.subtitle), rowData.subtitle);
   assert.ok(/left$/.test(rowData.subtitle), rowData.subtitle);
 });
@@ -265,14 +322,26 @@ test("an idle download shows the paused glyph and omits the rate", () => {
   assert.ok(!/Mbps/.test(rowData.subtitle), rowData.subtitle);
 });
 
+test("multiple sources stay distinct in the active list", () => {
+  const parsed = M.parse([
+    row(1, "Steam Game", 50, 100),
+    heroicRow("abc", "Heroic Game", 25, 100),
+    meta
+  ].join("\n"));
+  const state = M.derive(parsed.rows, parsed.meta, {}, 1000);
+  assert.strictEqual(state.active.length, 2);
+  const rows = M.buildRows(state.active);
+  assert.ok(/Steam/.test(rows[0].subtitle) || /Steam/.test(rows[1].subtitle));
+  assert.ok(/Heroic · Epic/.test(rows[0].subtitle) || /Heroic · Epic/.test(rows[1].subtitle));
+});
 
 group("download notifications");
 
-test("a nearly complete staging tree reports finished", () => {
+test("a nearly complete row reports finished", () => {
   const notices = M.downloadNotifications(
     "downloading",
-    [{ appid: 1, name: "Game", total: 1000, downloaded: 1000, percent: 100 }],
-    "idle", []
+    [{ source: "steam", sourceName: "Steam", appid: 1, name: "Game", total: 1000, downloaded: 1000, percent: 100 }],
+    "idle", [], { sources: { steam: { running: true } } }
   );
   assert.strictEqual(notices.length, 1);
   assert.strictEqual(notices[0].title, "Steam download finished");
@@ -280,30 +349,48 @@ test("a nearly complete staging tree reports finished", () => {
   assert.strictEqual(notices[0].finished, true);
 });
 
-test("an unfinished tree reports stopped at its last percentage", () => {
+test("an unfinished row reports stopped at its last percentage", () => {
   const notices = M.downloadNotifications(
     "downloading",
-    [{ appid: 1, name: "Game", total: 1000, downloaded: 400, percent: 40 }],
-    "idle", []
+    [{ source: "steam", sourceName: "Steam", appid: 1, name: "Game", total: 1000, downloaded: 400, percent: 40 }],
+    "idle", [], { sources: { steam: { running: true } } }
   );
   assert.strictEqual(notices[0].title, "Steam download stopped");
   assert.strictEqual(notices[0].body, "Game stopped at 40%");
 });
 
-test("a closed Steam client is reported as interrupted", () => {
+test("a closed launcher is reported as interrupted", () => {
   const notices = M.downloadNotifications(
     "downloading",
-    [{ appid: 1, name: "Game", total: 1000, downloaded: 400, percent: 40 }],
-    "stopped", []
+    [{ source: "steam", sourceName: "Steam", appid: 1, name: "Game", total: 1000, downloaded: 400, percent: 40 }],
+    "stopped", [], { sources: { steam: { running: false } } }
   );
   assert.strictEqual(notices[0].title, "Steam closed during a download");
+});
+
+test("each source gets its own notice", () => {
+  const notices = M.downloadNotifications(
+    "downloading",
+    [
+      { source: "steam", sourceName: "Steam", appid: 1, name: "Steam Game", total: 1000, downloaded: 1000, percent: 100 },
+      { source: "heroic", sourceName: "Heroic", appid: "abc", name: "Heroic Game", total: 0, downloaded: 0, percent: 0 }
+    ],
+    "idle", [],
+    { sources: { steam: { running: true }, heroic: { running: true } } }
+  );
+  assert.strictEqual(notices.length, 2);
+  assert.strictEqual(notices[0].source, "steam");
+  assert.strictEqual(notices[1].source, "heroic");
 });
 
 test("the first sample and continuing downloads stay quiet", () => {
   assert.deepStrictEqual(M.downloadNotifications("idle", [], "downloading", [{}]), []);
   assert.deepStrictEqual(M.downloadNotifications(
-    "downloading", [{ appid: 1, name: "Game", total: 1000, downloaded: 400, percent: 40 }],
-    "downloading", [{}]
+    "downloading",
+    [{ source: "steam", sourceName: "Steam", appid: 1, name: "Game", total: 1000, downloaded: 400, percent: 40 }],
+    "downloading",
+    [{ source: "steam", sourceName: "Steam", appid: 1 }],
+    { sources: { steam: { running: true } } }
   ), []);
 });
 

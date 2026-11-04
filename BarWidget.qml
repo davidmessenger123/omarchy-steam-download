@@ -5,26 +5,24 @@ import qs.Commons
 import qs.Ui
 import "Model.js" as Model
 
-// Steam Download
+// Game Downloads
 //
-// Live Steam download progress for the bar. Steam has no supported
-// progress API on Linux, so the helper reads what the client already
-// writes: the per-game appmanifest for the totals, and the size of the
-// `steamapps/downloading/<appid>/` staging tree for the bytes that have
-// actually landed. The manifest's own `BytesDownloaded` is only rewritten
-// when a download starts or stops, so it reads stale mid-download; the
-// staging tree does not.
+// Live download progress for Steam, Heroic and the native Epic Games
+// Launcher in one bar pill. None of the launchers exposes a supported
+// progress API, so the shared service reads what they already write:
+// Steam's staging tree, Heroic's download queue and progress log, and the
+// EGLv2 operation journal plus its chunk cache.
 //
-// The bar pill only exists while something is downloading, and carries the
+// The pill only exists while something is downloading, and carries the
 // percentage of the download closest to finishing. Click it for per-game
-// detail (bytes, throughput, time remaining) and to open Steam; right-click
-// refreshes immediately.
+// detail (source, bytes, throughput, time remaining) and to open the
+// relevant launcher; right-click refreshes immediately.
 //
 // Optional configuration on the layout entry in shell.json:
 //   {
 //     "id": "davidjm.steam-download",
 //     "interval": 3,      // seconds between measurements
-//     "showQueued": true  // list downloads Steam has queued but not started
+//     "showQueued": true  // list downloads a launcher has queued
 //   }
 BarWidget {
   id: root
@@ -40,8 +38,10 @@ BarWidget {
   readonly property var active: root.svc && root.svc.active ? root.svc.active : []
   readonly property var primary: root.svc ? root.svc.primary : null
   readonly property string state: root.svc ? root.svc.state : "idle"
-  readonly property string status: root.svc ? root.svc.status : "No active Steam downloads"
+  readonly property string status: root.svc ? root.svc.status : "No active game downloads"
   readonly property bool running: root.svc ? root.svc.running : true
+  readonly property var sources: root.svc && root.svc.sources ? root.svc.sources : ({})
+  readonly property bool installed: root.svc ? root.svc.installed : true
   readonly property string note: root.svc ? root.svc.note : ""
   readonly property string updatedLabel: root.svc ? root.svc.updatedLabel : ""
   readonly property real freeBytes: root.svc ? root.svc.freeBytes : 0
@@ -52,10 +52,11 @@ BarWidget {
   readonly property bool downloading: state === "downloading"
   readonly property var popupRows: Model.buildRows(root.rows)
   readonly property string pill: Model.pillText(root.primary)
+  readonly property string launcherName: root.primary ? root.primary.sourceName : "launcher"
 
   readonly property string icon: root.downloading
     ? (root.primary && root.primary.rate > 0 ? Model.GLYPH_DOWNLOAD : Model.GLYPH_PAUSED)
-    : Model.GLYPH_STEAM
+    : Model.GLYPH_GAME
 
   readonly property color activeColor: root.downloading
     ? (root.primary && root.primary.rate > 0 ? "#9ece6a" : "#e0af68")
@@ -92,12 +93,31 @@ BarWidget {
   function close() { root.opened = false }
   function togglePanel() { root.opened = !root.opened }
 
-  function openSteam() {
-    // Steam ships no omarchy-launch-steam; it is started through uwsm-app
-    // like every other desktop app. or-focus keeps this idempotent, so
-    // clicking the button while Steam is already up just raises it.
+  function defaultSource() {
+    if (root.primary) return root.primary.source
+    var order = ["steam", "heroic", "epic"]
+    for (var i = 0; i < order.length; i++) {
+      var meta = root.sources[order[i]]
+      if (meta && (meta.running || meta.installed)) return order[i]
+    }
+    return "steam"
+  }
+
+  function openLauncher(source) {
+    var target = String(source || root.defaultSource())
+    var appId = "steam"
+    var command = "uwsm-app -- steam"
+    if (target === "heroic") {
+      appId = "heroic"
+      command = "uwsm-app -- heroic"
+    } else if (target === "epic") {
+      appId = "EpicGamesLauncher"
+      command = "uwsm-app -- epic-games-launcher"
+    }
+    // No launcher ships an omarchy-launch-* wrapper; or-focus keeps this
+    // idempotent, so clicking while the launcher is already up just raises it.
     if (root.bar && typeof root.bar.run === "function")
-      root.bar.run("omarchy-launch-or-focus steam " + Util.shellQuote("uwsm-app -- steam"))
+      root.bar.run("omarchy-launch-or-focus " + appId + " " + Util.shellQuote(command))
   }
 
   // ---- bar pill -----------------------------------------------------------
@@ -123,7 +143,7 @@ BarWidget {
       tooltipText: root.status
       onPressed: function(buttonCode) {
         if (buttonCode === Qt.RightButton) root.refresh()
-        else if (buttonCode === Qt.MiddleButton) root.openSteam()
+        else if (buttonCode === Qt.MiddleButton) root.openLauncher("")
         else root.togglePanel()
       }
     }
@@ -182,8 +202,8 @@ BarWidget {
             Text {
               width: parent.width
               text: root.state === "downloading"
-                ? "Steam Downloads · " + root.active.length + " active"
-                : "Steam Downloads"
+                ? "Game Downloads · " + root.active.length + " active"
+                : "Game Downloads"
               color: Color.popups.text
               font.family: Style.font.family
               font.pixelSize: Style.font.body
@@ -195,7 +215,8 @@ BarWidget {
               width: parent.width
               text: root.downloading
                 ? root.status
-                : (root.running ? "Nothing downloading right now" : "Steam is not running")
+                : (root.running ? "Nothing downloading right now"
+                  : (root.note !== "" ? root.note : "No game launchers running"))
               color: Color.muted
               font.family: Style.font.family
               font.pixelSize: Style.font.caption
@@ -300,7 +321,7 @@ BarWidget {
           Text {
             width: parent.width
             visible: root.popupRows.length === 0
-            text: "No downloads in progress. Start one in Steam and it will appear here."
+            text: "No downloads in progress. Start one in Steam, Heroic, or Epic Games and it will appear here."
             color: Color.muted
             font.family: Style.font.family
             font.pixelSize: Style.font.bodySmall
@@ -349,11 +370,11 @@ BarWidget {
             anchors.right: refreshButton.left
             anchors.rightMargin: Style.space(8)
             anchors.verticalCenter: parent.verticalCenter
-            text: "Open Steam"
+            text: root.primary ? "Open " + root.primary.sourceName : "Open launcher"
             fontSize: Style.font.caption
             bordered: true
-            tooltipText: "Bring the Steam client to the front"
-            onClicked: root.openSteam()
+            tooltipText: "Bring the download's launcher to the front"
+            onClicked: root.openLauncher("")
           }
         }
       }

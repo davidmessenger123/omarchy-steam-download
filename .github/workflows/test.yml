@@ -17,7 +17,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Python syntax
-        run: python3 -m py_compile steam-downloads.py
+        run: python3 -m py_compile game-downloads.py
       - name: Python unit tests
         run: python3 -m unittest discover -s tests
       - name: JavaScript syntax

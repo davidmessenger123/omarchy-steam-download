@@ -2,12 +2,12 @@
   "$schema": "https://raw.githubusercontent.com/omarchy/omarchy/main/schemas/plugin.json",
   "schemaVersion": 1,
   "id": "davidjm.steam-download",
-  "name": "Steam Download",
-  "version": "1.1.3",
+  "name": "Game Downloads",
+  "version": "2.0.0",
   "author": "David JM",
   "license": "MIT",
   "repository": "https://github.com/davidmessenger123/omarchy-steam-download",
-  "description": "Live Steam download progress in the Omarchy bar, read from the Steam client's own app manifests and staging directory.",
+  "description": "Live Steam, Heroic and native Epic Games Launcher download progress in the Omarchy bar, read from each launcher's own local state.",
   "kinds": [
     "service",
     "bar-widget"
@@ -18,8 +18,8 @@
     "barWidget": "BarWidget.qml"
   },
   "barWidget": {
-    "displayName": "Steam Download",
-    "description": "Shows in-flight Steam downloads straight from the Steam client's own files, so the percentage, throughput and time remaining are read from the real staging directory rather than a guessed total. The pill appears only while something is downloading. Click it for per-game detail, or open Steam itself.",
+    "displayName": "Game Downloads",
+    "description": "Shows in-flight downloads from Steam, Heroic (Epic, GOG and Amazon games) and the native Epic Games Launcher. The pill appears only while something is downloading; click it for per-game detail and source, or open the relevant launcher.",
     "category": "Info",
     "defaultSection": "right",
     "allowMultiple": false,
@@ -35,28 +35,28 @@
         "type": "integer",
         "label": "Poll interval (seconds)",
         "defaultValue": 3,
-        "description": "How often to re-measure the download directory. The download rate is derived from the growth between two polls, so shorter intervals make the speed and ETA steadier at the cost of more disk reads."
+        "description": "How often to re-read the launchers' download state. Steam and Epic rates are derived from growth between two polls; Heroic reports its own rate. Shorter intervals make speed and ETA steadier at the cost of more disk reads."
       },
       {
         "key": "showQueued",
         "type": "boolean",
         "label": "Show queued downloads",
         "defaultValue": true,
-        "description": "Include games Steam has accepted but not started downloading. They are listed in the popup only, and never count as active downloads."
+        "description": "Include games a launcher has accepted but not started downloading. They are listed in the popup only, and never count as active downloads."
       },
       {
         "key": "notifyDownloads",
         "type": "bool",
         "label": "Desktop download notifications",
         "defaultValue": true,
-        "description": "Notify when a Steam download finishes, stops, or Steam closes mid-download. Clicking the notification opens Steam's downloads page."
+        "description": "Notify when a download finishes, stops, or its launcher closes mid-download. Clicking the notification opens the relevant launcher. Heroic already sends its own notifications, so disable this if you prefer its native ones."
       },
       {
         "key": "inhibitIdle",
         "type": "bool",
         "label": "Keep the screen awake while downloading",
         "defaultValue": true,
-        "description": "Ask the Media Idle Inhibit plugin for a sleep lease while a download is active. The lease is released as soon as the download stops."
+        "description": "Ask the Media Idle Inhibit plugin for a sleep lease while any monitored download is active. The lease is released as soon as the last download stops."
       }
     ]
   }

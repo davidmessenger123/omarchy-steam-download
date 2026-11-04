@@ -3,10 +3,11 @@ import Quickshell
 import Quickshell.Io
 import "Model.js" as Model
 
-// One Steam download poller for the whole shell. Steam has no supported
-// progress API on Linux, so the helper reads the client's app manifests and
-// the size of the staging tree. Keeping the helper here means a docked laptop
-// runs one Python process and one directory walk, not one per bar monitor.
+// One game-download poller for the whole shell. Steam, Heroic and the native
+// Epic Games Launcher each keep their own private download state; the helper
+// reads those files and normalises them into one row list. Keeping the helper
+// here means a docked laptop runs one Python process and one scan, not one per
+// bar monitor.
 Item {
   id: root
 
@@ -22,8 +23,10 @@ Item {
   property var active: []
   property var primary: null
   property string state: "idle"
-  property string status: "No active Steam downloads"
+  property string status: "No active game downloads"
   property bool running: true
+  property var sources: ({})
+  property bool installed: true
   property string note: ""
   property string updatedLabel: ""
   property real freeBytes: 0
@@ -35,15 +38,19 @@ Item {
   property bool inhibitIdle: true
   property bool idleLeaseHeld: false
 
-  // Previous poll's rows keyed by appid, each carrying the timestamp it was
-  // taken at. The rate is the growth of the staging tree between two polls.
+  // Previous poll's rows keyed by source/app id, each carrying the timestamp
+  // it was taken at. The rate is the growth of the staging tree between two
+  // polls; Heroic rows can also supply their own rate.
   property var previous: ({})
 
   readonly property bool downloading: state === "downloading"
 
-  // A closed Steam client is checked slowly; an active download is measured at
-  // the user's configured interval so speed and ETA stay steady.
-  readonly property int pollIntervalMs: (root.running ? root.intervalSeconds : 15) * 1000
+  // Active downloads are measured at the user's interval so speed and ETA stay
+  // steady. An idle launcher is checked less often, and a machine with none
+  // running is checked only occasionally.
+  readonly property int pollIntervalMs: root.downloading
+    ? root.intervalSeconds * 1000
+    : (root.running ? 5000 : 15000)
 
   function registerWidget(widget) {
     if (!widget || root.widgets.indexOf(widget) !== -1) return
@@ -112,21 +119,29 @@ Item {
     if (!root.inhibitIdle || !root.downloading) return
     root.idleLeaseHeld = true
     Quickshell.execDetached(["/usr/bin/omarchy-shell", "-q", "media-idle",
-      "acquire", "steam-download", "900"])
+      "acquire", "game-downloads", "900"])
   }
 
   function releaseIdleLease() {
     if (!root.idleLeaseHeld) return
     root.idleLeaseHeld = false
     Quickshell.execDetached(["/usr/bin/omarchy-shell", "-q", "media-idle",
-      "releaseLease", "steam-download"])
+      "releaseLease", "game-downloads"])
+  }
+
+  function notificationTarget(source) {
+    if (String(source) === "heroic") return ["/usr/bin/heroic"]
+    if (String(source) === "epic") return ["/usr/bin/epic-games-launcher"]
+    return ["/usr/bin/xdg-open", "steam://open/downloads"]
   }
 
   function sendNotification(notice) {
     if (!notice || !notice.title) return
-    Quickshell.execDetached(["/usr/share/omarchy/bin/omarchy-notification-send",
-      "--app-name", "Steam Download", notice.title, notice.body || "",
-      "--exec", "/usr/bin/xdg-open", "steam://open/downloads"])
+    var command = ["/usr/share/omarchy/bin/omarchy-notification-send",
+      "--app-name", "Game Downloads", notice.title, notice.body || "",
+      "--exec"]
+    command = command.concat(root.notificationTarget(notice.source))
+    Quickshell.execDetached(command)
   }
 
   function refresh() {
@@ -136,7 +151,7 @@ Item {
     // SIGALRM deadline of its own so a slow filesystem cannot hang the bar.
     fetcher.clearEnvironment = true
     fetcher.command = ["/usr/bin/python3", "-E",
-      Model.scriptPath(Qt.resolvedUrl("steam-downloads.py"))]
+      Model.scriptPath(Qt.resolvedUrl("game-downloads.py"))]
     if (root.showQueued) fetcher.command.push("--include-queued")
 
     root.fetchBusy = true
@@ -163,7 +178,7 @@ Item {
     for (var i = 0; i < state.rows.length; i++) {
       var row = state.rows[i]
       if (row.rate > 0) continue
-      var prior = root.previous[row.appid]
+      var prior = root.previous[row.key]
       if (prior && root.downloading && prior.rate > 0) row.rate = prior.rate
     }
 
@@ -173,15 +188,18 @@ Item {
     root.state = state.state
     root.status = state.status
     root.running = state.running
+    root.sources = state.sources
+    root.installed = state.installed
     root.note = state.note
     root.freeBytes = state.freeBytes
     root.totalBytes = state.totalBytes
-    root.previous = Model.indexByAppid(state.rows)
+    root.previous = Model.indexByKey(state.rows)
     root.updatedLabel = "Updated " + Model.clockTime(new Date())
 
     if (!successful) return
     if (root.notifyDownloads) {
-      var notices = Model.downloadNotifications(previousState, previousActive, state.state, state.active)
+      var notices = Model.downloadNotifications(previousState, previousActive,
+        state.state, state.active, { sources: state.sources })
       for (var n = 0; n < notices.length; n++) root.sendNotification(notices[n])
     }
     if (root.downloading && !wasDownloading) root.renewIdleLease()
@@ -215,7 +233,7 @@ Item {
       root.fetchBusy = false
       fetcher.running = false
       root.state = root.downloading ? root.state : "idle"
-      root.status = root.downloading ? root.status : "Steam check timed out"
+      root.status = root.downloading ? root.status : "Game download check timed out"
     }
   }
 
@@ -229,7 +247,7 @@ Item {
   }
 
   // Renew well before the 15-minute lease expires. The lease lives in the
-  // media-idle service, so a paused/closed Steam client releases it promptly.
+  // media-idle service, so a paused/closed launcher releases it promptly.
   Timer {
     interval: 300000
     repeat: true
