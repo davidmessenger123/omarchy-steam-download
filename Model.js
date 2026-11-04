@@ -229,7 +229,9 @@ function derive(rows, meta, previous, nowSeconds) {
     status: status,
     running: running,
     note: note,
-    libraries: meta ? toNumber(meta.libraries) : 0
+    libraries: meta ? toNumber(meta.libraries) : 0,
+    freeBytes: meta ? toNumber(meta.freeBytes) : 0,
+    totalBytes: meta ? toNumber(meta.totalBytes) : 0
   }
 }
 

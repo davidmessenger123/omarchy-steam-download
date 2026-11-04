@@ -26,6 +26,8 @@ Item {
   property bool running: true
   property string note: ""
   property string updatedLabel: ""
+  property real freeBytes: 0
+  property real totalBytes: 0
   property bool fetchBusy: false
   property int intervalSeconds: 3
   property bool showQueued: true
@@ -172,6 +174,8 @@ Item {
     root.status = state.status
     root.running = state.running
     root.note = state.note
+    root.freeBytes = state.freeBytes
+    root.totalBytes = state.totalBytes
     root.previous = Model.indexByAppid(state.rows)
     root.updatedLabel = "Updated " + Model.clockTime(new Date())
 

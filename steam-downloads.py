@@ -51,6 +51,7 @@ import json
 import os
 import pwd
 import re
+import shutil
 import signal
 import sys
 import time
@@ -225,6 +226,28 @@ def tree_bytes(path, deadline):
     return total, newest, truncated
 
 
+def library_space(roots):
+    """Free/total bytes across the distinct filesystems Steam uses."""
+    seen = set()
+    free = 0
+    total = 0
+    for root in roots:
+        try:
+            real = os.path.realpath(root)
+        except OSError:
+            continue
+        if real in seen:
+            continue
+        seen.add(real)
+        try:
+            usage = shutil.disk_usage(real)
+        except OSError:
+            continue
+        free += usage.free
+        total += usage.total
+    return free, total
+
+
 def snapshot(roots, deadline):
     """Current download size and totals for every app in every library."""
     entries = []
@@ -308,11 +331,14 @@ def main():
     live = [e for e in active
             if e["mtime"] == 0.0 or (e["now"] - e["mtime"]) <= SETTLE_SECONDS]
 
+    free_bytes, total_bytes = library_space(roots)
     meta = {
         "running": running,
         "steamRoot": steam_root,
         "downloads": len(live),
         "libraries": len(roots),
+        "freeBytes": free_bytes,
+        "totalBytes": total_bytes,
         "note": "",
     }
     if not live and not running:

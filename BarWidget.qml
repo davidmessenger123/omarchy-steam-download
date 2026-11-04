@@ -44,6 +44,9 @@ BarWidget {
   readonly property bool running: root.svc ? root.svc.running : true
   readonly property string note: root.svc ? root.svc.note : ""
   readonly property string updatedLabel: root.svc ? root.svc.updatedLabel : ""
+  readonly property real freeBytes: root.svc ? root.svc.freeBytes : 0
+  readonly property string diskLabel: root.freeBytes > 0
+    ? Model.formatBytes(root.freeBytes) + " free" : ""
   readonly property bool fetchBusy: root.svc ? root.svc.fetchBusy : false
 
   readonly property bool downloading: state === "downloading"
@@ -317,7 +320,9 @@ BarWidget {
             anchors.left: parent.left
             anchors.verticalCenter: parent.verticalCenter
             width: parent.width - openButton.implicitWidth - refreshButton.implicitWidth - Style.space(16)
-            text: root.running ? root.updatedLabel : (root.note !== "" ? root.note : "")
+            text: root.running
+                  ? root.updatedLabel + (root.diskLabel !== "" ? " · " + root.diskLabel : "")
+                  : (root.note !== "" ? root.note : "")
             color: Color.muted
             font.family: Style.font.family
             font.pixelSize: Style.font.caption
