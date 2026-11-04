@@ -918,6 +918,8 @@ def epic_rows(include_queued, deadline):
         operations = data.get("operations") or data.get("queue") or []
     elif isinstance(data, list):
         operations = data
+    if isinstance(operations, dict):
+        operations = list(operations.values())
     if not isinstance(operations, list):
         operations = []
 
