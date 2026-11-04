@@ -1062,7 +1062,9 @@ def main():
 
     steam, steam_meta = steam_rows(args.include_queued, deadline)
     heroic, heroic_meta = heroic_rows(args.include_queued)
-    epic, epic_meta = epic_rows(args.include_queued, deadline)
+    # Give the Epic chunk walk its own small budget so a large Steam scan
+    # cannot make an active Epic download look empty.
+    epic, epic_meta = epic_rows(args.include_queued, time.monotonic() + 0.8)
 
     rows = steam + heroic + epic
     active = [row for row in rows if not row.get("queued")]
