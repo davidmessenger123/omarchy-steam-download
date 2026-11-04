@@ -97,8 +97,12 @@ BarWidget {
     if (root.primary) return root.primary.source
     var order = ["steam", "heroic", "epic"]
     for (var i = 0; i < order.length; i++) {
-      var meta = root.sources[order[i]]
-      if (meta && (meta.running || meta.installed)) return order[i]
+      var running = root.sources[order[i]]
+      if (running && running.running) return order[i]
+    }
+    for (var j = 0; j < order.length; j++) {
+      var installed = root.sources[order[j]]
+      if (installed && installed.installed) return order[j]
     }
     return "steam"
   }
