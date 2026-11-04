@@ -80,11 +80,15 @@ BarWidget {
       setting("inhibitIdle", true) !== false)
   }
 
-  onSettingsChanged: root.applySettings()
-  Component.onCompleted: {
+  function attachService() {
+    if (!root.svc) return
     root.applySettings()
-    if (root.svc) root.svc.registerWidget(root)
+    root.svc.registerWidget(root)
   }
+
+  onSettingsChanged: root.applySettings()
+  onSvcChanged: root.attachService()
+  Component.onCompleted: root.attachService()
   Component.onDestruction: if (root.svc && typeof root.svc.unregisterWidget === "function") root.svc.unregisterWidget(root)
 
   property bool opened: false
