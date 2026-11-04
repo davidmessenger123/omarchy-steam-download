@@ -29,6 +29,9 @@ Item {
   property bool fetchBusy: false
   property int intervalSeconds: 3
   property bool showQueued: true
+  property bool notifyDownloads: true
+  property bool inhibitIdle: true
+  property bool idleLeaseHeld: false
 
   // Previous poll's rows keyed by appid, each carrying the timestamp it was
   // taken at. The rate is the growth of the staging tree between two polls.
@@ -85,13 +88,43 @@ Item {
     root.openPanel()
   }
 
-  function configure(interval, queued) {
+  function configure(interval, queued, notify, inhibit) {
     var nextInterval = Model.clampInt(interval, 1, 60)
     var nextQueued = queued !== false
-    if (nextInterval === root.intervalSeconds && nextQueued === root.showQueued) return
+    var nextNotify = notify !== false
+    var nextInhibit = inhibit !== false
+    var pollChanged = nextInterval !== root.intervalSeconds || nextQueued !== root.showQueued
+    var inhibitChanged = nextInhibit !== root.inhibitIdle
     root.intervalSeconds = nextInterval
     root.showQueued = nextQueued
-    if (!root.fetchBusy) root.refresh()
+    root.notifyDownloads = nextNotify
+    root.inhibitIdle = nextInhibit
+    if (inhibitChanged) {
+      if (nextInhibit && root.downloading) root.renewIdleLease()
+      else if (!nextInhibit) root.releaseIdleLease()
+    }
+    if (pollChanged && !root.fetchBusy) root.refresh()
+  }
+
+  function renewIdleLease() {
+    if (!root.inhibitIdle || !root.downloading) return
+    root.idleLeaseHeld = true
+    Quickshell.execDetached(["/usr/bin/omarchy-shell", "-q", "media-idle",
+      "acquire", "steam-download", "900"])
+  }
+
+  function releaseIdleLease() {
+    if (!root.idleLeaseHeld) return
+    root.idleLeaseHeld = false
+    Quickshell.execDetached(["/usr/bin/omarchy-shell", "-q", "media-idle",
+      "releaseLease", "steam-download"])
+  }
+
+  function sendNotification(notice) {
+    if (!notice || !notice.title) return
+    Quickshell.execDetached(["/usr/share/omarchy/bin/omarchy-notification-send",
+      "--app-name", "Steam Download", notice.title, notice.body || "",
+      "--exec", "/usr/bin/xdg-open", "steam://open/downloads"])
   }
 
   function refresh() {
@@ -113,6 +146,10 @@ Item {
     watchdog.stop()
     root.fetchBusy = false
 
+    var successful = String(raw || "").trim() !== ""
+    var previousState = root.state
+    var previousActive = root.active
+    var wasDownloading = root.downloading
     var parsed = Model.parse(raw)
     // Now, not the helper's clock: the rate is a delta between two polls
     // taken by this same process, so both ends share one timeline.
@@ -137,6 +174,14 @@ Item {
     root.note = state.note
     root.previous = Model.indexByAppid(state.rows)
     root.updatedLabel = "Updated " + Model.clockTime(new Date())
+
+    if (!successful) return
+    if (root.notifyDownloads) {
+      var notices = Model.downloadNotifications(previousState, previousActive, state.state, state.active)
+      for (var n = 0; n < notices.length; n++) root.sendNotification(notices[n])
+    }
+    if (root.downloading && !wasDownloading) root.renewIdleLease()
+    else if (!root.downloading && wasDownloading) root.releaseIdleLease()
   }
 
   Process {
@@ -178,6 +223,17 @@ Item {
     triggeredOnStart: true
     onTriggered: root.refresh()
   }
+
+  // Renew well before the 15-minute lease expires. The lease lives in the
+  // media-idle service, so a paused/closed Steam client releases it promptly.
+  Timer {
+    interval: 300000
+    repeat: true
+    running: root.downloading && root.inhibitIdle
+    onTriggered: root.renewIdleLease()
+  }
+
+  Component.onDestruction: root.releaseIdleLease()
 
   IpcHandler {
     target: root.moduleName

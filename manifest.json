@@ -3,7 +3,7 @@
   "schemaVersion": 1,
   "id": "davidjm.steam-download",
   "name": "Steam Download",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "author": "David JM",
   "license": "MIT",
   "repository": "https://github.com/davidmessenger123/omarchy-steam-download",
@@ -25,7 +25,9 @@
     "allowMultiple": false,
     "defaults": {
       "interval": 3,
-      "showQueued": true
+      "showQueued": true,
+      "notifyDownloads": true,
+      "inhibitIdle": true
     },
     "schema": [
       {
@@ -41,6 +43,20 @@
         "label": "Show queued downloads",
         "defaultValue": true,
         "description": "Include games Steam has accepted but not started downloading. They are listed in the popup only, and never count as active downloads."
+      },
+      {
+        "key": "notifyDownloads",
+        "type": "bool",
+        "label": "Desktop download notifications",
+        "defaultValue": true,
+        "description": "Notify when a Steam download finishes, stops, or Steam closes mid-download. Clicking the notification opens Steam's downloads page."
+      },
+      {
+        "key": "inhibitIdle",
+        "type": "bool",
+        "label": "Keep the screen awake while downloading",
+        "defaultValue": true,
+        "description": "Ask the Media Idle Inhibit plugin for a sleep lease while a download is active. The lease is released as soon as the download stops."
       }
     ]
   }

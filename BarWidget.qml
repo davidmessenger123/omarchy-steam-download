@@ -69,7 +69,11 @@ BarWidget {
   }
 
   function applySettings() {
-    if (root.svc) root.svc.configure(setting("interval", 3), setting("showQueued", true) !== false)
+    if (root.svc) root.svc.configure(
+      setting("interval", 3),
+      setting("showQueued", true) !== false,
+      setting("notifyDownloads", true) !== false,
+      setting("inhibitIdle", true) !== false)
   }
 
   onSettingsChanged: root.applySettings()

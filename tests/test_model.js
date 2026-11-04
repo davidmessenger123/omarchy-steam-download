@@ -265,5 +265,47 @@ test("an idle download shows the paused glyph and omits the rate", () => {
   assert.ok(!/Mbps/.test(rowData.subtitle), rowData.subtitle);
 });
 
+
+group("download notifications");
+
+test("a nearly complete staging tree reports finished", () => {
+  const notices = M.downloadNotifications(
+    "downloading",
+    [{ appid: 1, name: "Game", total: 1000, downloaded: 1000, percent: 100 }],
+    "idle", []
+  );
+  assert.strictEqual(notices.length, 1);
+  assert.strictEqual(notices[0].title, "Steam download finished");
+  assert.strictEqual(notices[0].body, "Game finished");
+  assert.strictEqual(notices[0].finished, true);
+});
+
+test("an unfinished tree reports stopped at its last percentage", () => {
+  const notices = M.downloadNotifications(
+    "downloading",
+    [{ appid: 1, name: "Game", total: 1000, downloaded: 400, percent: 40 }],
+    "idle", []
+  );
+  assert.strictEqual(notices[0].title, "Steam download stopped");
+  assert.strictEqual(notices[0].body, "Game stopped at 40%");
+});
+
+test("a closed Steam client is reported as interrupted", () => {
+  const notices = M.downloadNotifications(
+    "downloading",
+    [{ appid: 1, name: "Game", total: 1000, downloaded: 400, percent: 40 }],
+    "stopped", []
+  );
+  assert.strictEqual(notices[0].title, "Steam closed during a download");
+});
+
+test("the first sample and continuing downloads stay quiet", () => {
+  assert.deepStrictEqual(M.downloadNotifications("idle", [], "downloading", [{}]), []);
+  assert.deepStrictEqual(M.downloadNotifications(
+    "downloading", [{ appid: 1, name: "Game", total: 1000, downloaded: 400, percent: 40 }],
+    "downloading", [{}]
+  ), []);
+});
+
 console.log("\n" + passed + " passed, " + failed + " failed");
 process.exit(failed === 0 ? 0 : 1);

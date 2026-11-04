@@ -285,6 +285,31 @@ function pillText(primary) {
   return primary.percent + "%"
 }
 
+// Notify when a running download stops. Steam exposes no pause/complete
+// signal, so a nearly-full staging tree is treated as finished and anything
+// else as stopped. The first sample has no previous active rows and stays
+// quiet.
+function downloadNotifications(previousState, previousActive, nextState, nextActive) {
+  if (!Array.isArray(previousActive) || previousActive.length === 0) return []
+  if (Array.isArray(nextActive) && nextActive.length > 0) return []
+  var primary = previousActive[0]
+  var count = previousActive.length
+  var finished = primary.total > 0 && primary.downloaded >= primary.total * 0.995
+  var title = ""
+  var body = ""
+  if (nextState === "stopped") {
+    title = "Steam closed during a download"
+    body = count > 1 ? count + " downloads were interrupted" : primary.name + " was interrupted"
+  } else if (finished) {
+    title = "Steam download finished"
+    body = count > 1 ? count + " downloads finished" : primary.name + " finished"
+  } else {
+    title = "Steam download stopped"
+    body = count > 1 ? count + " downloads stopped" : primary.name + " stopped at " + primary.percent + "%"
+  }
+  return [{ "title": title, "body": body, "appid": primary.appid, "finished": finished }]
+}
+
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     GLYPH_DOWNLOAD: GLYPH_DOWNLOAD,
@@ -309,6 +334,7 @@ if (typeof module !== "undefined" && module.exports) {
     derive: derive,
     buildRows: buildRows,
     pillText: pillText,
+    downloadNotifications: downloadNotifications,
     scriptPath: scriptPath
   }
 }
